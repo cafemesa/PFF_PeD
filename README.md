@@ -1,12 +1,8 @@
 # PFF_PeD
-PointCloud Filter for People Detection
+PointCloud Fast Filter for People Detection
 
-## How to build with catkin
-```sh
-$ cd cd ~/catkin_ws/src/
-$ git clone https://github.com/cafemesa/PFF_PeD.git
-$ cd ~/catkin_ws && catkin_make
-```
+The algorithm "PointCloud Fast Filter for People Detection" (PFF-PeD) detects people by processing effectively point-cloud data, independently of the specific 3D sensor employed. By focusing on the most informative observations, (PFF-PeD) is able to improve the accuracy and processing times compared to existing 2D and 3D solutions. We implemented (PFF-PeD) in C++ and integrated its operation in ROS Kinetic Kame in a laptop with Ubuntu 16.04.
+
 ## Subscribed Topics
 
 ### RGB-D Camera
@@ -18,11 +14,14 @@ $ cd ~/catkin_ws && catkin_make
 * [/velodyne_points] :  Sensor PointCloud for peolple detection
 
 
+
 ## Published Topics
 
 * [/PeopleCloud] :  PointCloud with the final detection.
 * [/TrunkCloud] :  PointCloud filtered of the trunk range.
 * [/LegsCloud] :  PointCloud filtered of the Legs range.
+
+
 
 ## Parameters
 
@@ -47,5 +46,20 @@ $ cd ~/catkin_ws && catkin_make
 * [horizontal_fov] :  Desired horizontal field of view (from -theta/2 to theta/2), see the following image. in degrees.
 
 ![alt text](https://drive.google.com/uc?export=view&id=1489zOF8vgnzcyRe783N9ieJLoMB6DqZj)
+
+
+## How to build with catkin
+```sh
+$ cd cd ~/catkin_ws/src/
+$ git clone https://github.com/cafemesa/PFF_PeD.git
+$ cd ~/catkin_ws && catkin_make
+```
+
+## How to run
+
+### Launch Files (roslaunch)
+
+### Nodes (rosrun)
+
 
 
