@@ -133,10 +133,20 @@ The previous command run:
 
 #### Detection with Astra Camera PointCloud
 
+With the sensor:
+
 ```sh
 $ rosrun pff_ped astra_people
 $ roslaunch astra_launch astrapro.launch
 $ rosrun rviz rviz -d ~/catkin_ws/src/pff_ped/rviz_cfg/astra_people.rviz
+```
+
+With a bag:
+
+```sh
+$ rosrun pff_ped astra_people
+$ rosrun rviz rviz -d ~/catkin_ws/src/pff_ped/rviz_cfg/astra_people.rviz
+$ rosbag play [BAG_FILE]
 ```
 
 #### Detection with Velodyne VLP-16 PointCloud
