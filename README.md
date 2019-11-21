@@ -1,7 +1,7 @@
 # PFF_PeD
 PointCloud Fast Filter for People Detection
 
-The algorithm "PointCloud Fast Filter for People Detection" (PFF-PeD) detects people by processing effectively point-cloud data, independently of the specific 3D sensor employed. By focusing on the most informative observations, (PFF-PeD) is able to improve the accuracy and processing times compared to existing 2D and 3D solutions. We implemented (PFF-PeD) in C++ and integrated its operation in ROS Kinetic Kame in a laptop with Ubuntu 16.04.
+The algorithm "PointCloud Fast Filter for People Detection" (PFF-PeD) detects people by processing effectively point-cloud data, independently of the specific 3D sensor employed. By focusing on the most informative observations, PFF-PeD is able to improve the accuracy and processing times compared to existing 2D and 3D solutions. We implemented PFF-PeD in C++ and integrated its operation in ROS Kinetic Kame in a laptop with Ubuntu 16.04.
 
 ## Subscribed Topics
 
