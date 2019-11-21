@@ -84,9 +84,55 @@ $ catkin_make
 
 #### Detection with Astra Camera PointCloud
 
+```sh
+$ roslaunch pff_ped astra_people.launch 
+```
+
+The previous command run:
+* roslaunch astra_launch astrapro.launch
+* rosrun pff_ped astra_people
+* rivz with the configuration
+
 #### Detection with Velodyne VLP-16 PointCloud
 
+```sh
+$ roslaunch pff_ped velodyne_people.launch 
+```
+
+The previous command run:
+* roslaunch velodyne_pointcloud VLP16_points.launch
+* rosrun pff_ped velodyne_people
+* rivz with the configuration
+
 #### Detection with Velodyne VLP-16 PointCloud Bag
+
+
+
+We provide 4 bags that are configured in the launch file:
+
+Create the correct folder
+```sh
+$ cd ~/catkin_ws/src/pff_ped/
+$ mkdir bags
+```
+Download the bags files and copy the bags files into the "bags" folder
+
+1. [corridor.bag](https://drive.google.com/file/d/1BC3z_WJyiTMrO-u8sMz0bYei-BttHsG_/view?usp=sharing)
+2. [office.bag](https://drive.google.com/file/d/10xV6P-xX4-N_lJB54QQaNSm-nbiK8bVS/view?usp=sharing)
+3. [robotics.bag](https://drive.google.com/file/d/1N78rw1e5l_4-6CD6tOxYE53V-_9LU6gh/view?usp=sharing)
+4. [student.bag](https://drive.google.com/file/d/1OD5GOuFTOBBUm99sQhbYipx3AwcPNw6S/view?usp=sharing)
+
+
+Set the desired bag in the launch file and run
+
+```sh
+$ roslaunch pff_ped velodyne_people_bag.launch 
+```
+
+The previous command run:
+* rosrun pff_ped velodyne_people
+* rivz with the configuration
+* rosbag play [bag_name]
 
 ### Nodes (rosrun)
 
