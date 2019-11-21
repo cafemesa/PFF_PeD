@@ -9,7 +9,7 @@ ros::Publisher PeopleCloud_pub, LegsCloud_pub, TrunkCloud_pub;
 pcl::PointCloud<pcl::PointXYZ> PeopleCloud1, PeopleCloud2;
 float sensorheight, resolution, legs_begin, legs_end, trunk_begin, trunk_end, hip, hangle;
 int camera_fov, point1pos, point2pos, point3pos, point4pos;
-int Ncloud=0;
+int Ncloud=0, numSamples=0;
 
 //Struct to access for each point cordenates
 struct Point3D {
@@ -24,13 +24,13 @@ struct Point3D {
 };
 
 /**
- * This function recieve the Velodyne PointCloud. 
+ * This function recieve the Astra Camera PointCloud. 
  * Create the Trunk PointCloud and the Legs PointCloud.
  * Matching between Trunk PointCloud and Legs PointCloud to create People PointCloud
  * Run a speed filter to get the mooving people.
  * publish th final People PointCLoud
  *
- * @param input Velodyne PointCloud directly from the sensor
+ * @param input Astra Camera PointCloud directly from the sensor
  */
 
 void 
@@ -44,14 +44,14 @@ cloud_cb2 (const sensor_msgs::PointCloud2ConstPtr& input)
 	pcl::PointXYZI point;		
 	pcl::PointCloud<pcl::PointXYZ> laserCloudIn,LegsCloud, TrunkCloud, PeopleCloud;
 	pcl::PointXYZ pointlegs1, pointlegs2, pointtrunk1, pointtrunk2;
-
 	
-	LegsCloud.points.resize(150);
-	TrunkCloud.points.resize(150);
-	PeopleCloud.points.resize(150);
-
+	numSamples=camera_fov/resolution;
+	LegsCloud.points.resize(numSamples);
+	TrunkCloud.points.resize(numSamples);
+	PeopleCloud.points.resize(numSamples);
+	
 	float addpos=0;
-	double LegsRanges[150]={0}, TrunkRanges[150]={0};	
+	double LegsRanges[numSamples]={0}, TrunkRanges[numSamples]={0};	
 	int position = 0, postrunk10=0,  postrunk30=0, poslegs10=0, poslegs30=0;
 
 	
@@ -123,7 +123,7 @@ cloud_cb2 (const sensor_msgs::PointCloud2ConstPtr& input)
 		{	
 			float hiplegs1 = sqrt(pow(LegsCloud.points[i].x-pointlegs1.x,2.0) + pow(LegsCloud.points[i].y-pointlegs1.y,2.0));
 
-			// Check if a new detection appear in the field of view
+			// Check if a new cluster appear in the field of view
 			if (hiplegs1>0.25)
 			{
 				float hiplegs2 = sqrt(pow(pointlegs1.x-pointlegs2.x,2.0) + pow(pointlegs1.y-pointlegs2.y,2.0));
@@ -236,7 +236,7 @@ cloud_cb2 (const sensor_msgs::PointCloud2ConstPtr& input)
 	// People PointCloud resize
 	PeopleCloud.points.resize(pospos);
 	
-	// Store the las 2 People PointClouds
+	// Store the last 2 People PointClouds
 	PeopleCloud2=PeopleCloud1;
 	PeopleCloud1=PeopleCloud;
 	int newpos=0;
@@ -299,7 +299,7 @@ main (int argc, char **argv)
 	// Create a ROS subscriber for the input point cloud
 	ros::Subscriber sub = nh.subscribe ("/camera/depth/points", 1, cloud_cb2);
 	
-	// Create a ROS publisher for the output LaserScan	
+	// Create a ROS publisher for the outputs	
 	PeopleCloud_pub = nh.advertise<sensor_msgs::PointCloud2> ("/PeopleCloud", 1);
 	TrunkCloud_pub = nh.advertise<sensor_msgs::PointCloud2> ("/TrunkCloud", 1);
 	LegsCloud_pub = nh.advertise<sensor_msgs::PointCloud2> ("/LegsCloud", 1);

@@ -1,0 +1,23 @@
+<launch> 
+
+  <!-- start Velodyne VLP-16 -->
+  <include file="$(find velodyne_pointcloud)/launch/VLP16_points.launch"/>
+
+  <!-- start PointCloud Fast Filter -->
+  <node name="velodyne_people" pkg="pff_ped" type="velodyne_people" output="screen">
+    <param name="robot_height" value="6.0"/> <!-- Default 0.5 (50cm) -->
+    <param name="sensor_height" value="0.60"/> <!-- Default 0.15 (15cm) -->
+    <param name="min_vision_range" value="0.1"/> <!-- Default 0.3 (30cm) -->
+    <param name="max_vision_range" value="50.0"/> <!-- Default 50 (50m) -->
+    <param name="horizontal_fov" value="360"/> <!-- Default 360° -->
+    <param name="resolution" value="0.4"/> <!-- Default 0.4° -->
+    <param name="legs_begin" value="0.25"/> <!-- Default 0.25 (50cm) -->
+    <param name="legs_end" value="0.60"/> <!-- Default 0.60 (60cm) -->
+    <param name="trunk_begin" value="0.80"/> <!-- Default 0.80 (80cm) -->
+    <param name="trunk_end" value="1.50"/> <!-- Default 1.50 (150cm) -->
+  </node>
+
+  <!-- start rviz -->
+  <node type="rviz" name="rviz" pkg="rviz" args="-d $(find pff_ped)/rviz_cfg/velodyne_people.rviz" />
+
+</launch>
