@@ -50,7 +50,7 @@ The algorithm "PointCloud Fast Filter for People Detection" (PFF-PeD) detects pe
 
 ## How to build with catkin
 ```sh
-$ cd cd ~/catkin_ws/src/
+$ cd ~/catkin_ws/src/
 $ git clone https://github.com/cafemesa/PFF_PeD.git
 $ cd ~/catkin_ws && catkin_make
 ```
@@ -58,6 +58,35 @@ $ cd ~/catkin_ws && catkin_make
 ## How to run
 
 ### Launch Files (roslaunch)
+
+#### Requirements
+
+To run the detection with the Astra Camera (from: https://github.com/orbbec/ros_astra_camera):
+
+```sh
+$ sudo apt install ros-$ROS_DISTRO-rgbd-launch ros-$ROS_DISTRO-libuvc ros-$ROS_DISTRO-libuvc-camera ros-$ROS_DISTRO-libuvc-ros
+$ cd ~/catkin_ws/src
+$ git clone https://github.com/orbbec/ros_astra_camera
+$ ./ros_astra_camera/scripts/create_udev_rules
+$ https://github.com/orbbec/ros_astra_launch.git
+$ cd ~/catkin_ws && catkin_make
+```
+
+To run the detection with the Velodyne:
+
+```sh
+$ cd ~/catkin_ws/src
+$ git clone https://github.com/ros-drivers/velodyne.git
+$ cd ~/catkin_ws
+$ rosdep install --from-paths src -i -y
+$ catkin_make
+```
+
+#### Detection with Astra Camera PointCloud
+
+#### Detection with Velodyne VLP-16 PointCloud
+
+#### Detection with Velodyne VLP-16 PointCloud Bag
 
 ### Nodes (rosrun)
 
