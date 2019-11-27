@@ -3,9 +3,10 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <visualization_msgs/Marker.h>
 #define PI 3.14159265
 
-ros::Publisher PeopleCloud_pub, LegsCloud_pub, TrunkCloud_pub;
+ros::Publisher PeopleCloud_pub, LegsCloud_pub, TrunkCloud_pub, Markers;
 pcl::PointCloud<pcl::PointXYZ> PeopleCloud1, PeopleCloud2;
 float sensorheight, resolution, legs_begin, legs_end, trunk_begin, trunk_end, hip, hangle;
 int camera_fov, point1pos, point2pos, point3pos, point4pos;
@@ -277,6 +278,39 @@ cloud_cb2 (const sensor_msgs::PointCloud2ConstPtr& input)
 	pcl::toROSMsg(LegsCloud, LegsCloud_output);
     LegsCloud_output.header.frame_id = "camera_depth_frame";
 	LegsCloud_pub.publish (LegsCloud_output);	
+
+	visualization_msgs::Marker marker;
+	for (int j = 0 ; j < PeopleCloud.points.size();j++)
+	{		
+		marker.header.frame_id = "velodyne";
+		marker.header.stamp = ros::Time();
+		marker.ns = "my_namespace";
+		marker.id =j;
+		marker.type = visualization_msgs::Marker::CYLINDER;
+		marker.action = visualization_msgs::Marker::ADD;
+		marker.pose.position.x = PeopleCloud.points[j].x;
+		marker.pose.position.y = PeopleCloud.points[j].y;
+		marker.pose.position.z = 0;
+		marker.pose.orientation.x = 0.0;
+		marker.pose.orientation.y = 0.0;
+		marker.pose.orientation.z = 0.0;
+		marker.pose.orientation.w = 1.0;
+		marker.scale.x = 1.0;
+		marker.scale.y = 1.0;
+		marker.scale.z = 0.001;
+		marker.color.a = 0.5; // Don't forget to set the alpha!
+		marker.lifetime = ros::Duration(0.2);;
+		if (j==0) { marker.color.r = 1.0; marker.color.g = 0.0; marker.color.b = 0.0;}
+		else if (j==1) { marker.color.r = 0.0; marker.color.g = 1.0; marker.color.b = 0.0; }
+		else if (j==2) { marker.color.r = 0.0; marker.color.g = 0.0; marker.color.b = 1.0; }
+		else if (j==3) { marker.color.r = 1.0; marker.color.g = 1.0; marker.color.b = 0.0; }
+		else if (j==4) { marker.color.r = 1.0; marker.color.g = 0.0; marker.color.b = 1.0; }
+		else if (j==5) { marker.color.r = 0.0; marker.color.g = 1.0; marker.color.b = 1.0; }
+		else { marker.color.r = 1.0; marker.color.g = 1.0; marker.color.b = 1.0; }
+		//only if using a MESH_RESOURCE marker type:
+		marker.mesh_resource = "package://pr2_description/meshes/base_v0/base.dae";
+		Markers.publish(marker);		
+	}
 }
 
 
@@ -303,6 +337,8 @@ main (int argc, char **argv)
 	PeopleCloud_pub = nh.advertise<sensor_msgs::PointCloud2> ("/PeopleCloud", 1);
 	TrunkCloud_pub = nh.advertise<sensor_msgs::PointCloud2> ("/TrunkCloud", 1);
 	LegsCloud_pub = nh.advertise<sensor_msgs::PointCloud2> ("/LegsCloud", 1);
+	Markers = nh.advertise<visualization_msgs::Marker>( "marker", 1 );
+	
 	
 	// Spin
 	ros::spin ();	
