@@ -1,0 +1,28 @@
+<launch> 
+  <node name="velodyne_pff" pkg="pff" type="velodyne_pff" output="screen">
+  </node>
+
+  <node name="velodyne_doors" pkg="pff_ped" type="velodyne_doors" output="screen"></node>
+
+  <!-- start PointCloud Fast Filter -->
+  <node name="velodyne_chairs" pkg="pff_ped" type="velodyne_chairs" output="screen">
+    <param name="sensor_height" value="0.40"/> <!-- Default 0.15 (15cm) -->
+    <param name="min_vision_range" value="0.1"/> <!-- Default 0.3 (30cm) -->
+    <param name="max_vision_range" value="50.0"/> <!-- Default 50 (50m) -->
+    <param name="horizontal_fov" value="360"/> <!-- Default 360° -->
+    <param name="resolution" value="0.1"/> <!-- Default 0.4° -->
+  </node>
+
+  <node name="get" pkg="pff_ped" type="get" output="screen"></node>
+
+  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping">
+    <!-- param name="/use_sim_time" value="true"-->
+    <remap from="scan" to="scan"/>
+  </node>	
+
+  <!-- start rviz -->
+  <node type="rviz" name="rviz" pkg="rviz" args="-d $(find pff_ped)/rviz_cfg/velodyne_semantic.rviz" />
+
+  <!--ode pkg="rosbag" type="play" name="player" output="screen" args=" clock $(find pff_ped)/bags/semantic1.bag -r 1"/-->
+
+</launch>
