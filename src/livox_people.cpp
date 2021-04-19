@@ -48,7 +48,7 @@ pff_sem::pff_sem() : node_("~"),
 					 topic_pub1("/People_PC2"),
 					 topic_pub2("/Legs_PC2"),
 					 topic_pub3("/Trunk_PC2"),
-					 sensor_topic_sub("/velodyne_points"),
+					 sensor_topic_sub("/livox/lidar"),
 					 pose_topic_sub("/odom"),
 					 map_topic_sub("/map"),
 					 frame_id("map")
@@ -164,11 +164,11 @@ void pff_sem::filter(const sensor_msgs::PointCloud2ConstPtr &input)
 	}
 
 	
+
 	LegsCloud = cloudfilter(LegsCloud, 0.25, 0.03, 0.65);
 	TrunkCloud = cloudfilter(TrunkCloud, 0.25, 0.15, 0.65);
 	PeopleCloud = cloudmatcher(PeopleCloud, LegsCloud, TrunkCloud, 0.35);
 	PeopleCloud = mapfilter(PeopleCloud);
-	
 
 	//Publish PeopleCloud
 	sensor_msgs::PointCloud2 PeopleCloud_output;
@@ -292,14 +292,13 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ>
 	for (int i = 0; i < PeopleCloud.size(); i++)
 	{
 
-		ROS_INFO("1");
+
 		int position = 0;
 		float angle_min = 3 * PI / 2;
 		float angle_increment = -2 * PI / (360 / resolution);
 		float hip = sqrt((PeopleCloud[i].x) * (PeopleCloud[i].x) + ((PeopleCloud[i].y) * (PeopleCloud[i].y)));
 		float hangle = (asin((PeopleCloud[i].x) / hip)) * 180 / PI;
 
-		ROS_INFO("2");
 		if (PeopleCloud[i].y > 0)
 		{
 			position = (180.0 + hangle) / resolution;
@@ -313,8 +312,6 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ>
 			position = -hangle / resolution;
 		}
 
-		ROS_INFO("3");
-
 		float finalangle = (position * angle_increment) + angle_min;
 
 		float laserpointx = hip * cos(-finalangle - initial_angle - PI);
@@ -326,8 +323,6 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ>
 		int posxpx = ((/** - origin X in map.yaml */-PeopleCloud[i].x) / (-0.05));
 		int posypx = ((/** - origin Y in map.yaml */-PeopleCloud[i].y) / (-0.05));
 		int spacecount = 0;
-
-		ROS_INFO("4");
 
 		
 		for (int j = posxpx - 5; j <= posxpx + 5; j++)
@@ -341,8 +336,6 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ>
 			}
 		}
 
-		ROS_INFO("5");
-
 		float hiprobot = sqrt(pow(pose_x-PeopleCloud[i].x, 2)+pow(pose_y-PeopleCloud[i].y, 2));
 
 		if (spacecount < 15)
@@ -351,8 +344,6 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ>
 			PeopleCloud[lastpos].y = PeopleCloud[i].y;
 			lastpos++;
 		}
-
-		ROS_INFO("6");
 	}
 	PeopleCloud.resize(lastpos);
 	return PeopleCloud;
@@ -361,9 +352,9 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ>
 /** Robot Pose Callback */
 void pff_sem::poseAMCLCallback(const nav_msgs::Odometry::ConstPtr& msg)
 {
-	float initialposex = 22.33403968811035; //17.177270
-	float initialposey = 14.582218170166016; //14.546393
-	float angleinit = 0.0;// 0.0
+	float initialposex = 9.886837005615234; //17.177270
+	float initialposey = 24.690201568603516; //14.546393
+	float angleinit = 0.2330533;// 0.0
 	
 	pose_x = initialposex+msg->pose.pose.position.x;
 	pose_y = initialposey+msg->pose.pose.position.y;
