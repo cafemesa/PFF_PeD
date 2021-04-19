@@ -1,20 +1,47 @@
 <launch> 
 
-  <!-- start Velodyne VLP-16 -->
-  <include file="$(find velodyne_pointcloud)/launch/VLP16_points.launch"/>
+  <!-- start nodelet manager and driver nodelets -->
+  <include file="$(find velodyne_driver)/launch/nodelet_manager.launch">
+    <arg name="device_ip" value=""/>
+    <arg name="frame_id" value="velodyne"/>
+    <arg name="manager" value="velodyne_nodelet_manager" />
+    <arg name="model" value="VLP16"/>
+    <arg name="pcap" value=""/>
+    <arg name="port" value="2368"/>
+    <arg name="read_fast" value="false"/>
+    <arg name="read_once" value="false"/>
+    <arg name="repeat_delay" value="0.0"/>
+    <arg name="rpm" value="600"/>
+    <arg name="gps_time" value="false"/>
+    <arg name="cut_angle" value="-0.01"/>
+    <arg name="timestamp_first_packet" value="false"/>
+  </include>
+
+  <!-- start cloud nodelet -->
+  <include file="$(find velodyne_pointcloud)/launch/cloud_nodelet.launch">
+    <arg name="model" value="VLP16"/>
+    <arg name="calibration" value="$(find velodyne_pointcloud)/params/VLP16db.yaml"/> <!-- Set correct velodyne reference -->
+    <arg name="manager" value="velodyne_nodelet_manager" />
+    <arg name="max_range" value="130.0"/>
+    <arg name="min_range" value="0.4"/>
+    <arg name="organize_cloud" value="false"/>
+  </include>
 
   <!-- start PointCloud Fast Filter -->
-  <node name="velodyne_people" pkg="pff_ped" type="velodyne_people" output="screen">
+  <node name="velodyne_ped" pkg="pff_ped" type="velodyne_ped" output="screen">
     <param name="robot_height" value="6.0"/> <!-- Default 0.5 (50cm) -->
-    <param name="sensor_height" value="0.60"/> <!-- Default 0.15 (15cm) -->
-    <param name="min_vision_range" value="0.1"/> <!-- Default 0.3 (30cm) -->
-    <param name="max_vision_range" value="50.0"/> <!-- Default 50 (50m) -->
+    <param name="sensor_height" value="0.57"/> <!-- Default 0.15 (15cm) -->
     <param name="horizontal_fov" value="360"/> <!-- Default 360° -->
     <param name="resolution" value="0.4"/> <!-- Default 0.4° -->
     <param name="legs_begin" value="0.25"/> <!-- Default 0.25 (50cm) -->
     <param name="legs_end" value="0.60"/> <!-- Default 0.60 (60cm) -->
     <param name="trunk_begin" value="0.80"/> <!-- Default 0.80 (80cm) -->
     <param name="trunk_end" value="1.50"/> <!-- Default 1.50 (150cm) -->
+    <param name="topic_pub_people" value="/People_PC"/> <!-- Default /People_PC -->
+    <param name="topic_pub_legs" value="/Legs_PC"/> <!-- Default /Legs_PC -->
+    <param name="topic_pub_trunk" value="/Trunk_PC"/> <!-- Default /Trunk_PC -->
+    <param name="topic_sub" value="/velodyne_points"/> <!-- Default velodyne_points -->
+    <param name="frame_id" value="velodyne"/> <!-- Default base_scan -->
   </node>
 
   <!-- start rviz -->

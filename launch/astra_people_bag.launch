@@ -1,6 +1,4 @@
 <launch>
-  <!-- Start Astra camera driver -->
-  <include file="$(find astra_camera)/launch/astrapro.launch" />  
 
   <!-- start PointCloud Fast Filter -->
   <node name="astra_ped" pkg="pff_ped" type="astra_ped" output="screen">
