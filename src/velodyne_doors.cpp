@@ -3,411 +3,349 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-#include <visualization_msgs/Marker.h>
-#include <visualization_msgs/MarkerArray.h>
-#include <tf/tf.h>
-#include <geometry_msgs/Twist.h>
-#include <geometry_msgs/Pose.h>
-#include <nav_msgs/Odometry.h>
+#include <nav_msgs/OccupancyGrid.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <math.h>
 #define PI 3.14159265
 
-#include "nav_msgs/OccupancyGrid.h"
-#include "std_msgs/Header.h"
-#include "nav_msgs/MapMetaData.h"
+/** Set map size */
+int posout = 0;
+pcl::PointCloud<pcl::PointXYZ> FinalDoorCloud, laserCloudout;
 
-#include <geometry_msgs/PoseWithCovarianceStamped.h>
+class pff_sem
+{
+	public:
+		pff_sem();
+		void poseAMCLCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &msgAMCL);
+		void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr &msg);
+		pcl::PointCloud<pcl::PointXYZ> mapfilter(pcl::PointCloud<pcl::PointXYZ> PeopleCloud);
 
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <time.h>
-#include <fstream>
-#include <sstream>
-#include <string>
+		void filter(const sensor_msgs::PointCloud2ConstPtr &input);
+		void peopleCallback(const sensor_msgs::PointCloud2ConstPtr &input);
 
+		float robotheight, sensorheight, resolution, pose_x, pose_y, initial_angle;
+		int visionangle, position;
 
+		std::string topic_pub1, sensor_topic_sub, pose_topic_sub, map_topic_sub, people_topic_sub, frame_id;
+		pcl::PointCloud<pcl::PointXYZ> PeopleCloudIn;
 
-#include "std_msgs/Int32.h"
+		int** maparray;
+		int  map_width, map_height;
 
-#include "std_msgs/String.h"
-#include <math.h>
-#include <iostream>
-#include <nav_msgs/Odometry.h>
+	private:
+		ros::NodeHandle node_, ns_;
+		ros::Publisher doors_pub;
+		ros::Subscriber SensorSub, PoseSub, MapSub, PeopleSub;
+};
 
-ros::Publisher ThirdCloud_pub,Markers,TestCloud_pub;
-float resolution, hip, hangle;
-int visionangle;
-pcl::PointCloud<pcl::PointXYZ> FinalDoorCloud,laserCloudout;
-int posout=0;
-float pose_x=0, pose_y=0, initial_angle=0;
-int maparray [4000][4000];	
+pff_sem::pff_sem() : node_("~"),
+					 robotheight(1.0),
+					 sensorheight(0.57),
+					 visionangle(360),
+					 resolution(0.2),
+					 topic_pub1("/Doors_PC"),
+					 sensor_topic_sub("/velodyne_points"),
+					 pose_topic_sub("/amcl_pose"),
+					 map_topic_sub("/map"),
+					 people_topic_sub("/People_PC"),
+					 frame_id("map")
+{
+	/** Get parameters from the launch file */
+	node_.param("robot_height", robotheight, robotheight);
+	node_.param("sensor_height", sensorheight, sensorheight);
+	node_.param("horizontal_fov", visionangle, visionangle);
+	node_.param("resolution", resolution, resolution);
+	node_.param("topic_pub_doors", topic_pub1, topic_pub1);
+	node_.param("sensor_topic_sub", sensor_topic_sub, sensor_topic_sub);
+	node_.param("pose_topic_sub", pose_topic_sub, pose_topic_sub);
+	node_.param("map_topic_sub", map_topic_sub, map_topic_sub);
+	node_.param("people_topic_sub", people_topic_sub, people_topic_sub);
+	node_.param("frame_id", frame_id, frame_id);
 
-const std::string now_str();
-std::ofstream ptime;
-std::string abegtime;
-std::string aendtime;
+	/** Define Subscriber */
+	SensorSub = ns_.subscribe(sensor_topic_sub, 50, &pff_sem::filter, this);
+	PeopleSub = ns_.subscribe(people_topic_sub, 50, &pff_sem::peopleCallback, this);
+	PoseSub = ns_.subscribe(pose_topic_sub, 50, &pff_sem::poseAMCLCallback, this);
+	MapSub = ns_.subscribe(map_topic_sub, 50, &pff_sem::mapCallback, this);
 
+	/** Define Publisher */
+	doors_pub = ns_.advertise<sensor_msgs::PointCloud2>(topic_pub1, 1, false);
 
-void 
-cloud_cb2 (const sensor_msgs::PointCloud2ConstPtr& input)
-{ 
+	pose_x = 0;
+	pose_y = 0;
+	initial_angle = 0;
+	laserCloudout.points.resize(0);
+}
 
-	abegtime=now_str();
+void pff_sem::peopleCallback(const sensor_msgs::PointCloud2ConstPtr &input)
+{
+	pcl::fromROSMsg(*input, PeopleCloudIn);
+}
 
-	pcl::PointCloud<pcl::PointXYZ> laserCloudIn,FirstCloud, SecondCloud, ThirdCloud;
+void pff_sem::filter(const sensor_msgs::PointCloud2ConstPtr &input)
+{
+
+	pcl::PointCloud<pcl::PointXYZ> laserCloudIn, FirstCloud, SecondCloud, ThirdCloud;
 	pcl::fromROSMsg(*input, laserCloudIn);
 
-    unsigned int num_readings = 360/resolution;
+	unsigned int num_readings = 360 / resolution;
 	FirstCloud.points.resize(num_readings);
 	SecondCloud.points.resize(num_readings);
 	ThirdCloud.points.resize(num_readings);
-	
-	double FirstRanges[num_readings]={0};
-	int StartCluster[num_readings]={0};
-	int EndCluster[num_readings]={0};
+	double FirstRanges[num_readings] = {0};
+	int StartCluster[num_readings] = {0};
+	int EndCluster[num_readings] = {0};
 
-	int position = 0;
-	
-	for (int i = 0; i < laserCloudIn.size(); i++) {
-		
-		hip = sqrt((laserCloudIn[i].x)*(laserCloudIn[i].x)+((laserCloudIn[i].y)*(laserCloudIn[i].y)));
-		hangle = (asin ((laserCloudIn[i].x)/hip))*180/PI;
+	/** Filter by angle, Extraction of nearest point and prjection onto 2D plane*/
+	for (int i = 0; i < laserCloudIn.size(); i++)
+	{
+		float hip = sqrt(pow(laserCloudIn[i].x, 2) + pow(laserCloudIn[i].y, 2));
+		float hangle = (asin((laserCloudIn[i].x) / hip)) * 180 / PI;
 
 		// Dicard points outside the area of interest (Horizontal Filter)
-		if (visionangle==180 && laserCloudIn[i].x<=0){continue;}
-		else if ((visionangle<180 && laserCloudIn[i].x>0 && hangle<90-(visionangle/2)) || (visionangle<180 && laserCloudIn[i].x<=0)){continue;}
-		else if (visionangle>180 && visionangle<360 && laserCloudIn[i].x<0 && abs(hangle)>(visionangle-180)/2){continue;}
-		
-  		// Get the position in the arrays for get the nearest points
-		if (laserCloudIn[i].y>0) {
-			position=(180.0+hangle)/resolution;
-		}
-		else if (laserCloudIn[i].x>0 && laserCloudIn[i].y<=0) {
-			position=(360.0-hangle)/resolution;
-		}
-		else {
-			position=-hangle/resolution;			
-		}	
-
-		// Generate  first layer
-		if (-0.20<laserCloudIn[i].z && laserCloudIn[i].z < 0.40) 
+		if ((laserCloudIn[i].z < -sensorheight + 0.05) || isnan(laserCloudIn[i].x)==1 || isnan(laserCloudIn[i].y)==1 ||
+			fabs(laserCloudIn[i].x)<0.01 || fabs(laserCloudIn[i].y)<0.01 ||
+			(visionangle <= 180 && laserCloudIn[i].x <= 0) ||
+			(visionangle < 180 && laserCloudIn[i].x > 0 && hangle < 90 - (visionangle / 2)) ||
+			(visionangle > 180 && visionangle < 360 && laserCloudIn[i].x < 0 && abs(hangle) > (visionangle - 180) / 2))
 		{
-            // Extraction of nearest points
-			if (FirstRanges[position]==0 || hip < FirstRanges[position])
-			{
-				FirstCloud.points[position].x=laserCloudIn[i].x;
-				FirstCloud.points[position].y=laserCloudIn[i].y;
-				FirstCloud.points[position].z=0;	                    // Projection onto 2D
-				FirstRanges[position]=hip;
-			}
-		}		
+			continue;
+		}
+
+		// Get the position in the arrays for get the nearest points
+		if (laserCloudIn[i].y > 0)
+		{
+			position = (180.0 + hangle) / resolution;
+		}
+		else if (laserCloudIn[i].x > 0 && laserCloudIn[i].y <= 0)
+		{
+			position = (360.0 - hangle) / resolution;
+		}
+		else
+		{
+			position = -hangle / resolution;
+		}
+
+		// Extraction of nearest points
+		if (FirstRanges[position] == 0 || hip < FirstRanges[position])
+		{
+			FirstCloud.points[position].x = laserCloudIn[i].x;
+			FirstCloud.points[position].y = laserCloudIn[i].y;
+			FirstCloud.points[position].z = 0; // Projection onto 2D
+			FirstRanges[position] = hip;
+		}
 	}
+
+	int newpos = 0;
+	for (int i = 0; i < FirstCloud.size(); i++)
+	{
+		if (fabs(FirstCloud.points[i].x) < 0.1 && fabs(FirstCloud.points[i].y) < 0.1)
+		{
+			continue;
+		}
+		else
+		{
+			FirstCloud.points[newpos].x = FirstCloud.points[i].x;
+			FirstCloud.points[newpos].y = FirstCloud.points[i].y;
+			newpos++;
+		}
+	}
+	FirstCloud.resize(newpos);
 
 	// Define clusters
-	int cluster_position=0;
-	StartCluster[cluster_position]=0;
-	for (int i = 0; i < FirstCloud.size()-1; i++) {
-		if (FirstCloud.points[i].x<0.1 && FirstCloud.points[i].y<0.1){continue;}	
-		float hip_cluster = sqrt(pow(FirstCloud.points[i+1].x-FirstCloud.points[i].x,2)+pow(FirstCloud.points[i+1].y-FirstCloud.points[i].y,2));
-		if (hip_cluster>0.5)
+	int cluster_position = 0;
+	StartCluster[cluster_position] = 0;
+	for (int i = 0; i < FirstCloud.size() - 1; i++)
+	{
+		float hip_cluster = sqrt(pow(FirstCloud.points[i + 1].x - FirstCloud.points[i].x, 2) + pow(FirstCloud.points[i + 1].y - FirstCloud.points[i].y, 2));
+		if (hip_cluster > 0.6)
 		{
-			EndCluster[cluster_position]=i;
+			EndCluster[cluster_position] = i;
 			cluster_position++;
-			StartCluster[cluster_position]=i+1;
+			StartCluster[cluster_position] = i + 1;
 		}
 	}
-	EndCluster[cluster_position]=FirstCloud.size()-1;	
+	EndCluster[cluster_position] = FirstCloud.size() - 1;
 
 	// Define doors
-	float size1min=0.8;
-	float size1max=1.0;
-	int doorpos=0;
-	for (int i = 0; i < cluster_position-1; i++) {
-		for (int j = i+1; j < cluster_position; j++) 
-		{			
-			float init_first_x = FirstCloud.points[StartCluster[i]].x;
-			float init_first_y = FirstCloud.points[StartCluster[i]].y;
+	float size1min = 0.8;
+	float size1max = 1.0;
+	int doorpos = 0;
+	for (int i = 0; i < cluster_position + 1; i++)
+	{
+		for (int j = 0; j < cluster_position + 1; j++)
+		{
+			if (i == j)
+			{
+				continue;
+			}
 			float init_second_x = FirstCloud.points[StartCluster[j]].x;
 			float init_second_y = FirstCloud.points[StartCluster[j]].y;
-			float end_first_x = FirstCloud.points[EndCluster[i]].x;
-			float end_first_y = FirstCloud.points[EndCluster[i]].y;
-			float end_second_x = FirstCloud.points[EndCluster[j]].x;
-			float end_second_y = FirstCloud.points[EndCluster[j]].y;
+			float end_first_x = FirstCloud.points[EndCluster[i] - 1].x;
+			float end_first_y = FirstCloud.points[EndCluster[i] - 1].y;
 
-			float hip_clusters1 = sqrt(pow(init_first_x-end_second_x,2)+pow(init_first_y-end_second_y,2));
-			float hip_clusters2 = sqrt(pow(init_second_x-end_first_x,2)+pow(init_second_y-end_first_y,2));
+			float hip = sqrt(pow(init_second_x - end_first_x, 2) + pow(init_second_y - end_first_y, 2));
 
-			float hip_clusters3 = sqrt(pow(init_first_x-init_second_x,2)+pow(init_first_y-init_second_y,2));
-			float hip_clusters4 = sqrt(pow(end_second_y-end_first_x,2)+pow(end_second_y-end_first_y,2));
-
-			/*if (hip_clusters1>0.9 && hip_clusters1<0.95)
+			if (hip > 0.9 && hip < 0.98)
 			{
-				SecondCloud.points[doorpos].x=(init_first_x+end_second_x)/2;
-				SecondCloud.points[doorpos].y=(init_first_y+end_second_y)/2;
-				SecondCloud.points[doorpos].z=0;
-				//ROS_INFO("Primer initx=%f, inity=%f, endx=%f, endy=%f, midx=%f, midy=%f", init_first_x,init_first_y,end_second_x,end_second_y,SecondCloud.points[doorpos].x,SecondCloud.points[doorpos].y);
+				SecondCloud.points[doorpos].x = (init_second_x + end_first_x) / 2;
+				SecondCloud.points[doorpos].y = (init_second_y + end_first_y) / 2;
+				SecondCloud.points[doorpos].z = 0;
 				doorpos++;
-			}*/
-			if ((hip_clusters2>0.92 && hip_clusters2<0.98) )
-			{
-				SecondCloud.points[doorpos].x=(init_second_x+end_first_x)/2;
-				SecondCloud.points[doorpos].y=(init_second_y+end_first_y)/2;
-				SecondCloud.points[doorpos].z=0;
-				//ROS_INFO("Segundo initx=%f, inity=%f, endx=%f, endy=%f, midx=%f, midy=%f", init_second_x,init_second_y,end_first_x,end_first_y,SecondCloud.points[doorpos].x,SecondCloud.points[doorpos].y);
-				doorpos++;
-			}	
-			/*if (hip_clusters3>0.9 && hip_clusters3<0.95)
-			{
-				SecondCloud.points[doorpos].x=(init_first_x+init_second_x)/2;
-				SecondCloud.points[doorpos].y=(init_first_y+init_second_y)/2;
-				SecondCloud.points[doorpos].z=0;
-				//ROS_INFO("Tercero initx=%f, inity=%f, endx=%f, endy=%f, midx=%f, midy=%f", init_first_x,init_first_y,init_second_x,init_second_y,SecondCloud.points[doorpos].x,SecondCloud.points[doorpos].y);
-				doorpos++;
-			}	
-			if (hip_clusters4>0.9 && hip_clusters4<0.95)
-			{
-				SecondCloud.points[doorpos].x=(end_second_x+end_first_x)/2;
-				SecondCloud.points[doorpos].y=(end_second_y+end_first_y)/2;
-				SecondCloud.points[doorpos].z=0;
-				//ROS_INFO("Cuarto initx=%f, inity=%f, endx=%f, endy=%f, midx=%f, midy=%f", end_second_x,end_second_y,end_first_x,end_first_y,SecondCloud.points[doorpos].x,SecondCloud.points[doorpos].y);
-				doorpos++;
-			}	*/	
-			
-		}		
+			}
+		}
 	}
+	SecondCloud.resize(doorpos);
 
 	// Filter by the distance between the robot and the posible door to reduce errors
-	SecondCloud.resize(doorpos);
-	int doorposfinal=0;
-	for (int i = 0; i < SecondCloud.size(); i++) {
-		hip = sqrt(pow(SecondCloud.points[i].x,2)+pow(SecondCloud.points[i].y,2));
-		if (hip<1.3 && hip>0.5)
+	int doorposfinal = 0;
+	for (int i = 0; i < SecondCloud.size(); i++)
+	{
+		float hip = sqrt(pow(SecondCloud.points[i].x, 2) + pow(SecondCloud.points[i].y, 2));
+		if (hip < 1.3 && hip > 0.5)
 		{
-			ThirdCloud.points[doorposfinal].x=SecondCloud.points[i].x;
-			ThirdCloud.points[doorposfinal].y=SecondCloud.points[i].y;
-			ThirdCloud.points[doorposfinal].z=0;
+			SecondCloud.points[doorposfinal].x = SecondCloud.points[i].x;
+			SecondCloud.points[doorposfinal].y = SecondCloud.points[i].y;
+			SecondCloud.points[doorposfinal].z = 0;
 			doorposfinal++;
 		}
 	}
-	ThirdCloud.resize(doorposfinal);
+	SecondCloud.resize(doorposfinal);
 
+	SecondCloud = mapfilter(SecondCloud);
 
-	//std::cout << "Begin=" <<  abegtime << "Finish=" <<  now_str() << std::endl;
+	//Publish PeopleCloud
+	sensor_msgs::PointCloud2 DoorsCloud_output;
+	pcl::toROSMsg(SecondCloud, DoorsCloud_output);
+	DoorsCloud_output.header.frame_id = frame_id;
+	doors_pub.publish(DoorsCloud_output);
+}
 
-	
-	for (int i = 0; i < ThirdCloud.size(); i++) {
-		
-		//ROS_INFO("x=%f, y=%f", ThirdCloud[i].x,ThirdCloud[i].y);
-		float hip = sqrt((ThirdCloud[i].x)*(ThirdCloud[i].x)+((ThirdCloud[i].y)*(ThirdCloud[i].y)));
-		float hangle = fabs(asin ((ThirdCloud[i].x)/hip));
-		
-		if (ThirdCloud[i].x>0 && ThirdCloud[i].y>0){hangle=(PI/2)-hangle;}
-		if (ThirdCloud[i].x>0 && ThirdCloud[i].y<0){hangle=(3*PI/2)+hangle;}
-		if (ThirdCloud[i].x<0 && ThirdCloud[i].y<0){hangle=(3*PI/2)-hangle;}
-		if (ThirdCloud[i].x<0 && ThirdCloud[i].y>0){hangle=(PI/2)+hangle;}
+/** Map filter */
+pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ> PeopleCloud)
+{
+	for (int i = 0; i < PeopleCloud.size(); i++)
+	{
+		int position = 0;
+		float angle_min = 3 * PI / 2;
+		float angle_increment = -2 * PI / (360 / resolution);
+		float hip = sqrt((PeopleCloud[i].x) * (PeopleCloud[i].x) + ((PeopleCloud[i].y) * (PeopleCloud[i].y)));
+		float hangle = (asin((PeopleCloud[i].x) / hip)) * 180 / PI;
 
-		float finalangle=0;
-		if (initial_angle<0){
-			finalangle=hangle+initial_angle+2*PI;
-		}
-		else{
-			finalangle=hangle+initial_angle;
-		}
-
-
-		if (finalangle>2*PI){finalangle=finalangle-(2*PI);}
-
-		
-		if (finalangle>0 && finalangle<PI/2)
+		if (PeopleCloud[i].y > 0)
 		{
-			ThirdCloud[i].y= hip*sin(finalangle);
-			ThirdCloud[i].x= sqrt(-((ThirdCloud[i].y)*(ThirdCloud[i].y))+((hip)*(hip)));
+			position = (180.0 + hangle) / resolution;
 		}
-		else if (finalangle>PI/2 && finalangle<PI)
+		else if (PeopleCloud[i].x > 0 && PeopleCloud[i].y <= 0)
 		{
-			ThirdCloud[i].y= hip*sin(PI-finalangle);
-			ThirdCloud[i].x= -sqrt(-((ThirdCloud[i].y)*(ThirdCloud[i].y))+((hip)*(hip)));
+			position = (360.0 - hangle) / resolution;
 		}
-		else if (finalangle>PI && finalangle<3*PI/2)
+		else
 		{
-			ThirdCloud[i].y= -hip*sin(finalangle-PI);
-			ThirdCloud[i].x= -sqrt(-((ThirdCloud[i].y)*(ThirdCloud[i].y))+((hip)*(hip)));
+			position = -hangle / resolution;
 		}
-		else if (finalangle>3*PI/2 && finalangle<2*PI)
-		{
-			ThirdCloud[i].y= -hip*sin(2*PI-finalangle);
-			ThirdCloud[i].x= sqrt(-((ThirdCloud[i].y)*(ThirdCloud[i].y))+((hip)*(hip)));
-		
-		}
-		ThirdCloud[i].x=ThirdCloud[i].x+pose_x;
-		ThirdCloud[i].y=ThirdCloud[i].y+pose_y;	
 
-		int posxpx=((-100-ThirdCloud[i].x)/(-0.05));
-		int posypx=((-100-ThirdCloud[i].y)/(-0.05));
-		int spacecount=0;
-		//ROS_INFO("pos, %d, %d, %d, %d",posxpx-7,posxpx+7,posypx-7,posypx+7);
+		float finalangle = (position * angle_increment) + angle_min;
 
-		for (int j = posxpx-7; j < posxpx+7; j++) {
-			for (int k = posypx-7; k < posypx+7; k++) {
-				if (maparray[j][k]==100 || maparray[j][k]==-1)
+		float laserpointx = hip * cos(-finalangle - initial_angle - PI);
+		float laserpointy = hip * sin(-finalangle - initial_angle - PI);
+
+		PeopleCloud[i].x = -laserpointx + pose_x;
+		PeopleCloud[i].y = laserpointy + pose_y;
+
+		int posxpx = ((-100 - PeopleCloud[i].x) / (-0.05));
+		int posypx = ((-100 - PeopleCloud[i].y) / (-0.05));
+		int spacecount = 0;
+
+		for (int j = posxpx - 7; j < posxpx + 7; j++)
+		{
+			for (int k = posypx - 7; k < posypx + 7; k++)
+			{
+				if (maparray[j][k] == 100 || maparray[j][k] == -1)
 				{
 					spacecount++;
 				}
-			}		
+			}
 		}
 
-		if (spacecount<15)
+		if (spacecount < 15)
 		{
-			if (posout==0)
+			int prueba = 0;
+			for (int j = 0; j < laserCloudout.size(); j++)
 			{
-				laserCloudout[posout].x=ThirdCloud[i].x;
-				laserCloudout[posout].y=ThirdCloud[i].y;
-				posout++;
-			}
-			else
-			{
-				int prueba=0;
-				for (int j = 0; j < laserCloudout.size(); j++) {
-					float hiprem = sqrt(pow(laserCloudout[j].x-ThirdCloud[i].x,2)+pow(laserCloudout[j].y-ThirdCloud[i].y,2));
-					if (hiprem<0.9){break;}
-					else {prueba++;}
-				}
-				if (prueba==laserCloudout.size())
+				float hiprem = sqrt(pow(laserCloudout[j].x - PeopleCloud[i].x, 2) + pow(laserCloudout[j].y - PeopleCloud[i].y, 2));
+				if (hiprem < 0.9)
 				{
-					laserCloudout[posout].x=ThirdCloud[i].x;
-					laserCloudout[posout].y=ThirdCloud[i].y;
+					break;
+				}
+				else
+				{
+					prueba++;
+				}
+			}
+			if (prueba == laserCloudout.size())
+			{
+				int counter = 0;
+				for (int j = 0; j < PeopleCloudIn.size(); j++)
+				{
+					float hiprem = sqrt(pow(PeopleCloudIn[j].x - PeopleCloud[i].x, 2) + pow(PeopleCloudIn[j].y - PeopleCloud[i].y, 2));
+					if (hiprem < 1.0)
+					{
+						counter++;
+					}
+				}
+				if (counter == 0)
+				{
+					laserCloudout.resize(laserCloudout.size() + 1);
+					laserCloudout[posout].x = PeopleCloud[i].x;
+					laserCloudout[posout].y = PeopleCloud[i].y;
 					posout++;
 				}
 			}
 		}
 	}
-	//laserCloudout.resize(posout);
 
-	//Publish ThirdCloud
-	sensor_msgs::PointCloud2 ThirdCloud_output;
-	pcl::toROSMsg(laserCloudout, ThirdCloud_output);
-    ThirdCloud_output.header.frame_id = "map";
-	ThirdCloud_pub.publish (ThirdCloud_output);
+	return laserCloudout;
+}
 
+/** Robot Pose Callback */
+void pff_sem::poseAMCLCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &msgAMCL)
+{
+	pose_x = msgAMCL->pose.pose.position.x;
+	pose_y = msgAMCL->pose.pose.position.y;
+	float siny_cosp = 2 * (msgAMCL->pose.pose.orientation.w * msgAMCL->pose.pose.orientation.z);
+	float cosy_cosp = 1 - (2 * (msgAMCL->pose.pose.orientation.z * msgAMCL->pose.pose.orientation.z));
+	initial_angle = atan2(siny_cosp, cosy_cosp);
+}
 
-	visualization_msgs::MarkerArray marker;
-	marker.markers.resize(posout);
+/** Map Callback */
+void pff_sem::mapCallback(const nav_msgs::OccupancyGrid::ConstPtr &msg)
+{
+	std_msgs::Header header = msg->header;
+	nav_msgs::MapMetaData info = msg->info;
 
-	for (int j = 0 ; j < posout;j++)
-	{		
-		marker.markers[j].header.frame_id = "map";
-		marker.markers[j].header.stamp = ros::Time();
-		marker.markers[j].ns = "my_namespace";
-		marker.markers[j].id =j;
-		marker.markers[j].type = visualization_msgs::Marker::CYLINDER;
-		marker.markers[j].action = visualization_msgs::Marker::ADD;
-		marker.markers[j].pose.position.x = laserCloudout.points[j].x;
-		marker.markers[j].pose.position.y = laserCloudout.points[j].y;
-		marker.markers[j].pose.position.z = 0;
-		marker.markers[j].pose.orientation.x = 0.0;
-		marker.markers[j].pose.orientation.y = 0.0;
-		marker.markers[j].pose.orientation.z = 0.0;
-		marker.markers[j].pose.orientation.w = 1.0;
-		marker.markers[j].scale.x = 0.50;
-		marker.markers[j].scale.y = 0.50;
-		marker.markers[j].scale.z = 0.001;
-		marker.markers[j].color.a = 0.5; 
-		//marker.markers[j].lifetime = ros::Duration(0.2);
-		marker.markers[j].color.r = 1.0; 
-		marker.markers[j].color.g = 0.0; 
-		marker.markers[j].color.b = 0.0;
-		marker.markers[j].mesh_resource = "package://pr2_description/meshes/base_v0/base.dae";
+	maparray = new int*[info.width];
+    for(int i = 0; i < info.width; ++i)
+    {
+        maparray[i] = new int[info.height];
+    }
+    map_width = info.width;
+    map_height = info.height;
+
+	for (int x = 0; x < info.width; x++)
+	{
+		for (int y = 0; y < info.height; y++)
+		{
+			maparray[x][y] = msg->data[x + info.width * y];
+		}
 	}
-	Markers.publish(marker);
 }
 
-void poseAMCLCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& msgAMCL)
+/** Main function*/
+int main(int argc, char **argv)
 {
-    pose_x = msgAMCL->pose.pose.position.x;
-    pose_y = msgAMCL->pose.pose.position.y;  
-	initial_angle = 2.0*asin(msgAMCL->pose.pose.orientation.z);	
-}
-
-void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
-  std_msgs::Header header = msg->header;
-  nav_msgs::MapMetaData info = msg->info;  
-  for (unsigned int x = 0; x < info.width; x++){
-    for (unsigned int y = 0; y < info.height; y++){
-		maparray[x][y]=msg->data[x+ info.width * y];
-	}  
-  }
-}
-
-
-
-int
-main (int argc, char **argv)
-{
-	// Initialize ROS
-	ros::init (argc, argv, "velodyne_doors");
-	ros::NodeHandle nh;
-
-	// Get launch parameters
-	if(!nh.getParam("/velodyne_doors/horizontal_fov",visionangle)){visionangle = 120;}
-	if(!nh.getParam("/velodyne_doors/resolution",resolution)){resolution = 0.2;}
-	
-	laserCloudout.points.resize(1000);
-
-	// Create a ROS subscriber for the input point cloud
-	ros::Subscriber sub = nh.subscribe ("/velodyne_points", 1, cloud_cb2);
-	ros::Subscriber sub_amcl = nh.subscribe("amcl_pose", 100, poseAMCLCallback);	
-	ros::Subscriber map_sub = nh.subscribe("/map",10,mapCallback);
-
-	// Create a ROS publisher for the outputs	
-	ThirdCloud_pub = nh.advertise<sensor_msgs::PointCloud2> ("/DoorCloud", 1);
-	TestCloud_pub = nh.advertise<sensor_msgs::PointCloud2> ("/TestCloud", 1);
-	Markers = nh.advertise<visualization_msgs::MarkerArray>( "/markerArray", 1 );
-	
-	// Spin
-	ros::spin ();	
-}
-
-
-
-const std::string now_str()
-{
-    // Get current time from the clock, using microseconds resolution
-    const boost::posix_time::ptime now = 
-        boost::posix_time::microsec_clock::local_time();
-
-    // Get the time offset in current day
-    const boost::posix_time::time_duration td = now.time_of_day();
-
-    //
-    // Extract hours, minutes, seconds and milliseconds.
-    //
-    // Since there is no direct accessor ".milliseconds()",
-    // milliseconds are computed _by difference_ between total milliseconds
-    // (for which there is an accessor), and the hours/minutes/seconds
-    // values previously fetched.
-    //
-    const long hours        = td.hours();
-    const long minutes      = td.minutes();
-    const long seconds      = td.seconds();
-    const long milliseconds = td.total_milliseconds() -
-                              ((hours * 3600 + minutes * 60 + seconds) * 1000);
-	const long microseconds = td.total_microseconds() -
-                              (((hours * 3600 + minutes * 60 + seconds) * 1000000))-(milliseconds*1000);
-
-    //
-    // Format like this:
-    //
-    //      hh:mm:ss.SSS
-    //
-    // e.g. 02:15:40:321
-    //
-    //      ^          ^
-    //      |          |
-    //      123456789*12
-    //      ---------10-     --> 12 chars + \0 --> 13 chars should suffice
-    //  
-    // 
-    char buf[40];
-    //sprintf(buf, "%02ld:%02ld:%02ld.%03ld.%03ld",hours, minutes, seconds, milliseconds, microseconds);
-	sprintf(buf, "%02ld:%03ld:%03ld",seconds, milliseconds, microseconds);
-
-    return buf;
+	ros::init(argc, argv, "velodyne_doors");
+	pff_sem filter;
+	ros::spin();
+	return 0;
 }

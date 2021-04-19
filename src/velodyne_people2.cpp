@@ -6,7 +6,6 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <math.h>
-#include "nav_msgs/Odometry.h"
 #define PI 3.14159265
 
 
@@ -16,14 +15,14 @@ public:
 	pff_sem();
 
 	void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr &msg);
-	void poseAMCLCallback(const nav_msgs::Odometry::ConstPtr& msg);	
+	void poseAMCLCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &msgAMCL);	
 
 	void filter(const sensor_msgs::PointCloud2ConstPtr &input);
 	pcl::PointCloud<pcl::PointXYZ> cloudfilter(pcl::PointCloud<pcl::PointXYZ> LegsCloud, float separation, float minWidth, float maxWidth);
 	pcl::PointCloud<pcl::PointXYZ> cloudmatcher(pcl::PointCloud<pcl::PointXYZ> PeopleCloud, pcl::PointCloud<pcl::PointXYZ> LegsCloud, pcl::PointCloud<pcl::PointXYZ> TrunkCloud, float separation);
 	pcl::PointCloud<pcl::PointXYZ> mapfilter(pcl::PointCloud<pcl::PointXYZ> PeopleCloud);
 
-	float robotheight, sensorheight, resolution, legs_begin, legs_end, trunk_begin, trunk_end, pose_x, pose_y, initial_angle2, initial_angle;
+	float robotheight, sensorheight, resolution, legs_begin, legs_end, trunk_begin, trunk_end, pose_x, pose_y, initial_angle;
 	int visionangle, position, Ncloud;
 	std::string topic_pub1, topic_pub2, topic_pub3, sensor_topic_sub, pose_topic_sub, map_topic_sub, frame_id;
 	
@@ -37,7 +36,7 @@ private:
 };
 
 pff_sem::pff_sem() : node_("~"),
-					 robotheight(2.0),
+					 robotheight(1.0),
 					 sensorheight(0.57),
 					 visionangle(360),
 					 resolution(0.2),
@@ -49,7 +48,7 @@ pff_sem::pff_sem() : node_("~"),
 					 topic_pub2("/Legs_PC2"),
 					 topic_pub3("/Trunk_PC2"),
 					 sensor_topic_sub("/livox/lidar"),
-					 pose_topic_sub("/odom"),
+					 pose_topic_sub("/amcl_pose"),
 					 map_topic_sub("/map"),
 					 frame_id("map")
 {
@@ -85,12 +84,11 @@ pff_sem::pff_sem() : node_("~"),
 	Ncloud = 0;
 	pose_x = 0;
 	pose_y = 0;
-	initial_angle2 = 0;
+	initial_angle = 0;
 }
 
 void pff_sem::filter(const sensor_msgs::PointCloud2ConstPtr &input)
 {
-	initial_angle=initial_angle2;
 	Ncloud++;
 
 	pcl::PointCloud<pcl::PointXYZ> laserCloudIn, LegsCloud, TrunkCloud, PeopleCloud;
@@ -163,39 +161,36 @@ void pff_sem::filter(const sensor_msgs::PointCloud2ConstPtr &input)
 		}
 	}
 
-	
 
-	LegsCloud = cloudfilter(LegsCloud, 0.25, 0.03, 0.65);
+	LegsCloud = cloudfilter(LegsCloud, 0.25, 0.05, 0.65);
 	TrunkCloud = cloudfilter(TrunkCloud, 0.25, 0.15, 0.65);
 	PeopleCloud = cloudmatcher(PeopleCloud, LegsCloud, TrunkCloud, 0.35);
 	PeopleCloud = mapfilter(PeopleCloud);
 
-	//Publish PeopleCloud
-	sensor_msgs::PointCloud2 PeopleCloud_output;
-	pcl::toROSMsg(PeopleCloud, PeopleCloud_output);
-	PeopleCloud_output.header.frame_id = frame_id;
-	people_pub.publish(PeopleCloud_output);	
-
 	//Publish LegsCloud
 	sensor_msgs::PointCloud2 LegsCloud_output;
-	pcl::toROSMsg(TrunkCloud, LegsCloud_output);
-	LegsCloud_output.header.frame_id = "base_link";
+	pcl::toROSMsg(LegsCloud, LegsCloud_output);
+	LegsCloud_output.header.frame_id = frame_id;
 	legs_pub.publish(LegsCloud_output);
 
 	//Publish TrunkCloud
 	sensor_msgs::PointCloud2 TrunkCloud_output;
 	pcl::toROSMsg(TrunkCloud, TrunkCloud_output);
-	TrunkCloud_output.header.frame_id = "base_link";
+	TrunkCloud_output.header.frame_id = frame_id;
 	trunk_pub.publish(TrunkCloud_output);
 
-	
+	//Publish PeopleCloud
+	sensor_msgs::PointCloud2 PeopleCloud_output;
+	pcl::toROSMsg(PeopleCloud, PeopleCloud_output);
+	PeopleCloud_output.header.frame_id = frame_id;
+	people_pub.publish(PeopleCloud_output);
 }
 
 /** Legs and Trunk filters */
 pcl::PointCloud<pcl::PointXYZ> pff_sem::cloudfilter(pcl::PointCloud<pcl::PointXYZ> Cloud, float separation, float minWidth, float maxWidth)
 {
 	pcl::PointXYZ point1, point2;
-	int pos1 = 0, pos2 = 0;
+	int point1pos, point2pos, pos1 = 0, pos2 = 0;
 
 	for (int i = 0; i < Cloud.size(); i++)
 	{
@@ -203,12 +198,15 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::cloudfilter(pcl::PointCloud<pcl::PointXY
 		{
 			continue;
 		}
-
 		// Save the first point of the sample
 		if (pos2 == 0)
 		{
-			point1.x = point2.x = Cloud.points[i].x;
-			point1.y = point2.y = Cloud.points[i].y;
+			point1.x = Cloud.points[i].x;
+			point1.y = Cloud.points[i].y;
+			point1pos = i;
+			point2.x = Cloud.points[i].x;
+			point2.y = Cloud.points[i].y;
+			point2pos = i;
 			pos2++;
 		}
 		else
@@ -231,10 +229,12 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::cloudfilter(pcl::PointCloud<pcl::PointXY
 				// Store the first point of the new detection
 				point2.x = Cloud.points[i].x;
 				point2.y = Cloud.points[i].y;
+				point2pos = i;
 			}
 			//Store the last point to compare in the nest round
 			point1.x = Cloud.points[i].x;
 			point1.y = Cloud.points[i].y;
+			point1pos = i;
 		}
 	}
 	Cloud.points.resize(pos1);
@@ -245,20 +245,18 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::cloudfilter(pcl::PointCloud<pcl::PointXY
 pcl::PointCloud<pcl::PointXYZ> pff_sem::cloudmatcher(pcl::PointCloud<pcl::PointXYZ> PeopleCloud, pcl::PointCloud<pcl::PointXYZ> LegsCloud, pcl::PointCloud<pcl::PointXYZ> TrunkCloud, float separation)
 {
 	int pospos = 0;
-	for (int i = 0; i < TrunkCloud.size(); i++)
+	for (int i = 1; i < TrunkCloud.size(); i++)
 	{
-		for (int j = 0; j < LegsCloud.size(); j++)
+		for (int j = 1; j < LegsCloud.size(); j++)
 		{
 			// Get the distance between the points in Trunk PointCloud and Legs PointCloud
 			float hip1 = sqrt(pow(TrunkCloud.points[i].x - LegsCloud.points[j].x, 2.0) + pow(TrunkCloud.points[i].y - LegsCloud.points[j].y, 2.0));
 			// If exist a match between the two clouds the point in Trunk PointCloud us stored in People PointCloud
 			if (hip1 < separation)
 			{
-				
 				// Store the first point
 				if (pospos == 0)
 				{
-					//std::cout << pospos << "\n";
 					PeopleCloud.points[pospos].x = TrunkCloud.points[i].x;
 					PeopleCloud.points[pospos].y = TrunkCloud.points[i].y;
 					PeopleCloud.points[pospos].z = 0;
@@ -266,9 +264,13 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::cloudmatcher(pcl::PointCloud<pcl::PointX
 				}
 				else
 				{
-					
+					float hip20 = 10;
 					float hip10 = sqrt(pow(PeopleCloud.points[pospos - 1].x - TrunkCloud.points[i].x, 2.0) + pow(PeopleCloud.points[pospos - 1].y - TrunkCloud.points[i].y, 2.0));
-					if (hip10 > 0.6)
+					if (pospos > 1)
+					{
+						float hip20 = sqrt(pow(PeopleCloud.points[pospos - 2].x - TrunkCloud.points[i].x, 2.0) + pow(PeopleCloud.points[pospos - 2].y - TrunkCloud.points[i].y, 2.0));
+					}
+					if (hip10 > 0.6 && hip20 > 0.6)
 					{
 						PeopleCloud.points[pospos].x = TrunkCloud.points[i].x;
 						PeopleCloud.points[pospos].y = TrunkCloud.points[i].y;
@@ -291,8 +293,6 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ>
 	int lastpos = 0;
 	for (int i = 0; i < PeopleCloud.size(); i++)
 	{
-
-
 		int position = 0;
 		float angle_min = 3 * PI / 2;
 		float angle_increment = -2 * PI / (360 / resolution);
@@ -324,8 +324,8 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ>
 		int posypx = ((/** - origin Y in map.yaml */-PeopleCloud[i].y) / (-0.05));
 		int spacecount = 0;
 
-		
-		for (int j = posxpx - 5; j <= posxpx + 5; j++)
+		//ROS_INFO("1. x=%d, y=%d, mapw=%d maph=%d", posxpx, posypx, PeopleCloud[i].x, PeopleCloud[i].y);
+		for (int j = posxpx - 4; j <= posxpx + 5; j++)
 		{
 			for (int k = posypx - 5; k <= posypx + 5; k++)
 			{
@@ -335,8 +335,7 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ>
 				}
 			}
 		}
-
-		float hiprobot = sqrt(pow(pose_x-PeopleCloud[i].x, 2)+pow(pose_y-PeopleCloud[i].y, 2));
+		//ROS_INFO("2. x=%d, y=%d, mapw=%d, maph=%d", posxpx, posypx, map_width, map_height);
 
 		if (spacecount < 15)
 		{
@@ -350,17 +349,13 @@ pcl::PointCloud<pcl::PointXYZ> pff_sem::mapfilter(pcl::PointCloud<pcl::PointXYZ>
 }
 
 /** Robot Pose Callback */
-void pff_sem::poseAMCLCallback(const nav_msgs::Odometry::ConstPtr& msg)
+void pff_sem::poseAMCLCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &msgAMCL)
 {
-	float initialposex = 9.886837005615234; //17.177270
-	float initialposey = 24.690201568603516; //14.546393
-	float angleinit = 0.2330533;// 0.0
-	
-	pose_x = initialposex+msg->pose.pose.position.x;
-	pose_y = initialposey+msg->pose.pose.position.y;
-	float siny_cosp = 2 * (msg->pose.pose.orientation.w * msg->pose.pose.orientation.z);
-	float cosy_cosp = 1 - (2 * (msg->pose.pose.orientation.z * msg->pose.pose.orientation.z));
-	initial_angle2 = angleinit+atan2(siny_cosp, cosy_cosp);
+	pose_x = msgAMCL->pose.pose.position.x;
+	pose_y = msgAMCL->pose.pose.position.y;
+	float siny_cosp = 2 * (msgAMCL->pose.pose.orientation.w * msgAMCL->pose.pose.orientation.z);
+	float cosy_cosp = 1 - (2 * (msgAMCL->pose.pose.orientation.z * msgAMCL->pose.pose.orientation.z));
+	initial_angle = atan2(siny_cosp, cosy_cosp);
 }
 
 /** Map Callback */
